@@ -5,8 +5,8 @@ pragma solidity 0.8.28;
 import {Test, console2} from "forge-std/Test.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
-import {MetaNFTAuction} from "../contracts/MetaNFTAuction.sol";
-import {MetaNFT} from "../contracts/MetaNFT.sol";
+import {MetaNFTAuction} from "./MetaNFTAuction.sol";
+import {MetaNFT} from "./MetaNFT.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // forge test --match-contract MetaNFTAuction --fork-url url -vvv
@@ -26,6 +26,8 @@ contract MetaNFTAuctionTest is Test {
         TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(address(impl), proxyAdmin, initData);
 
         auction = MetaNFTAuction(address(proxy));
+
+        // msg.sender为
         nft = new MetaNFT();
     }
 

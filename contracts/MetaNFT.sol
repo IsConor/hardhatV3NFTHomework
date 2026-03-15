@@ -8,6 +8,7 @@ contract MetaNFT is ERC721 {
     address private _owner;
 
     constructor() ERC721("MetaNFT", "MFT") {
+        // 铸造给msg.sender调用者 ID为1的NFT，在测试用例中new方法时锁定到拍卖合约
         _mint(msg.sender, 1);
         _owner = msg.sender;
     }

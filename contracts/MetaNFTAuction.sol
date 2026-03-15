@@ -47,6 +47,7 @@ contract MetaNFTAuction is Initializable {
     function initialize(address admin_) external initializer {
         require(admin_ != address(0), "invalid admin");
         admin = admin_;
+
     }
 
     // 卖家发起拍卖
@@ -75,6 +76,18 @@ contract MetaNFTAuction is Initializable {
             highestBidInDollar: 0
         });
         auctionId++;
+
+
+
+        // 检查当前合约是否有对应nft的授权？ 应该不用
+        // 因为是卖家调用的此函数，所以直接授权即可
+        // require(auctions[auctionId].nft.getApproved(nftId) == address(this),"no");
+
+        // 授权给当前合约id为nftId的NFT
+        auctions[auctionId].nft.approve(address(this), nftId);
+        // 将id为nftId的NFT从卖家seller转入当前合约锁定
+        auctions[auctionId].nft.safeTransferFrom(seller, address(this), nftId);
+        // 触发开始拍卖事件
         emit StartBid(auctionId);
     }
 
@@ -128,16 +141,49 @@ contract MetaNFTAuction is Initializable {
         emit Bid(msg.sender, msg.value, bidMethod);
     }
 
+    // 管理员在拍卖结束后调用bidSuccess方法分配资产
+    function bidSuccess(uint256 auctionId_) external onlyAdmin{
+        Auction storage auction = auctions[auctionId_];
+
+        require(auction.end, "bid not ended");
+        require(block.timestamp > auction.startingTime + auction.duration,"bid not ended");
+
+        // 卖家获得竞拍所得ETH或者token
+        uint256 bidMethod = bidMethods[auctionId_][auction.highestBidder];
+        uint256 allowance = auction.paymentToken.allowance(address(this), auction.highestBidder);
+        // 卖家获得相应的成交额 这里判断是ETH还是ERC20的token
+        if(bidMethod == 1){
+            // ETH
+            (bool success,) = auction.seller.call{value: auction.highestBid}("");
+            require(success, "not success");
+        }else{
+            // Token
+            // 授权额度大于转账额度（疑问？这里直接给授权还是检查即可）
+            require(allowance >= auction.highestBid, "invalid payment");
+            auction.paymentToken.transferFrom(address(this), auction.seller, auction.highestBid);
+        }
+        
+        // NFT应该转给最高出价者
+        auction.nft.safeTransferFrom(address(this), auction.highestBidder, auction.nftId);
+    }
+
+    // 竞拍的人没有拍到，调用withdraw进行退款
     function withdraw(uint256 auctionId_) external returns (uint256) {
         Auction storage auction = auctions[auctionId_];
+        // 出价最高的人不能退款
+        require(auction.highestBidder!=msg.sender, "error");
         // 结束才能提款
         require(block.timestamp >= auction.startingTime + auction.duration, "not ended");
         uint256 bidMethod = bidMethods[auctionId_][msg.sender];
+        // 确认msg.sender应该退款的额度
         uint256 bal = bids[auctionId_][msg.sender];
+        // 进行退款
         bids[auctionId_][msg.sender] = 0;
         if (bidMethod == 1) {
+            // 退 ETH
             payable(msg.sender).transfer(bal);
         } else {
+            // 退 ERC20 token
             IERC20(address(auction.paymentToken)).transferFrom(address(this), msg.sender, bal);
         }
         emit Withdraw(msg.sender, bal);
@@ -149,6 +195,8 @@ contract MetaNFTAuction is Initializable {
         
         Auction storage auction = auctions[auctionId_];
         require(!auction.end, "ended");
+        
+        // admin主动停止拍卖
         auction.end = true;
         emit EndBid(auctionId_);
     }
