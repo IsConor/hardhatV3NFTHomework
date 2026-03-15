@@ -39,6 +39,16 @@ contract MetaNFTAuction is Initializable {
         require(msg.sender == admin, "not admin");
         _;
     }
+    modifier auctionNotEnd(uint256 auctionId_){
+        require(!auctions[auctionId_].end, "ended");
+        require(block.timestamp < auctions[auctionId_].startingTime + auctions[auctionId_].duration, "ended");
+        _;
+    }
+    modifier auctionEnded(uint256 auctionId_){
+        require(auctions[auctionId_].end, "not ended");
+        require(block.timestamp > auctions[auctionId_].startingTime + auctions[auctionId_].duration, "not ended");
+        _;
+    }
     // 初始化
     constructor() {
        _disableInitializers();
@@ -47,7 +57,6 @@ contract MetaNFTAuction is Initializable {
     function initialize(address admin_) external initializer {
         require(admin_ != address(0), "invalid admin");
         admin = admin_;
-
     }
 
     // 卖家发起拍卖
@@ -92,14 +101,13 @@ contract MetaNFTAuction is Initializable {
     }
 
     // 买家竞价
-    function bid(uint256 auctionId_) external payable {
+    function bid(uint256 auctionId_) external payable auctionNotEnd(auctionId_){
         Auction storage auction = auctions[auctionId_];
         uint256 allowance = auction.paymentToken.allowance(msg.sender, address(this));
         require(msg.value > 0 || allowance > 0, "invalid bid");
         require((msg.value > 0) != (allowance > 0), "only one of ETH or token");
         require(auction.startingTime > 0, "not started");
-        require(!auction.end, "ended");
-        require(block.timestamp < auction.startingTime + auction.duration, "ended");
+
         if (auction.highestBidder != address(0)) {
             bids[auctionId_][auction.highestBidder] += auction.highestBid;
         }
@@ -142,11 +150,8 @@ contract MetaNFTAuction is Initializable {
     }
 
     // 管理员在拍卖结束后调用bidSuccess方法分配资产
-    function bidSuccess(uint256 auctionId_) external onlyAdmin{
+    function bidSuccess(uint256 auctionId_) external onlyAdmin auctionEnded(auctionId_){
         Auction storage auction = auctions[auctionId_];
-
-        require(auction.end, "bid not ended");
-        require(block.timestamp > auction.startingTime + auction.duration,"bid not ended");
 
         // 卖家获得竞拍所得ETH或者token
         uint256 bidMethod = bidMethods[auctionId_][auction.highestBidder];
@@ -167,13 +172,13 @@ contract MetaNFTAuction is Initializable {
         auction.nft.safeTransferFrom(address(this), auction.highestBidder, auction.nftId);
     }
 
-    // 竞拍的人没有拍到，调用withdraw进行退款
-    function withdraw(uint256 auctionId_) external returns (uint256) {
+    // 竞拍的人没有拍到，调用withdraw进行退款 结束才能提款
+    function withdraw(uint256 auctionId_) external auctionEnded(auctionId_) returns (uint256) {
         Auction storage auction = auctions[auctionId_];
         // 出价最高的人不能退款
         require(auction.highestBidder!=msg.sender, "error");
-        // 结束才能提款
-        require(block.timestamp >= auction.startingTime + auction.duration, "not ended");
+
+
         uint256 bidMethod = bidMethods[auctionId_][msg.sender];
         // 确认msg.sender应该退款的额度
         uint256 bal = bids[auctionId_][msg.sender];
@@ -191,11 +196,10 @@ contract MetaNFTAuction is Initializable {
     }
 
     // 结束拍卖
-    function endBidding(uint256 auctionId_) external onlyAdmin{
+    function endBidding(uint256 auctionId_) external onlyAdmin auctionNotEnd(auctionId_){
         
         Auction storage auction = auctions[auctionId_];
-        require(!auction.end, "ended");
-        
+
         // admin主动停止拍卖
         auction.end = true;
         emit EndBid(auctionId_);
